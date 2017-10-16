@@ -1,6 +1,7 @@
 import numpy
 import math
 import pylab as plt
+import perms as perm
 
 
 class Tree():
@@ -11,6 +12,51 @@ class Tree():
         self.leaf = isLeaf
         self.val = val
 
+def copyTree(root):
+    if root != None:
+        newd = root.data
+        newleaf = root.leaf
+        newval = root.val
+        tree = Tree(newd,newleaf,newval)
+        if root.left != None:
+            tree.left = copyTree(root.left)
+        else:
+            tree.left = None
+        if root.right != None:
+            tree.right = copyTree(root.right)
+        else:
+            tree.right = None
+        return tree
+    else:
+        return None
+
+def populateData(root, data, depth):
+    if root.leaf == True:
+        root.val = findMajority(data)
+        return
+    feature = root.data
+    leftData = getCLabel(data, feature, -1)
+    rightData = getCLabel(data, feature, 1)
+    if root.left != None:
+        populateData(root.left, leftData, depth+1)
+    if root.right != None:
+        populateData(root.right, rightData, depth+1)
+    return
+
+def getVal(root, data):
+    if root.leaf == False and data[root.data] == -1:
+        return getVal(root.left, data)
+    elif root.leaf == False and data[root.data] == 1:
+        return getVal(root.right, data)
+    else:
+        return root.data
+
+def getLabelValues(root, data):
+    curLabel = []
+    for d in data:
+        curLabel.append(getVal(root, d))
+    return curLabel
+    
 def getCEntropy(data, col, weights):
     x0 = 0
     y00 = 0
@@ -114,6 +160,7 @@ def getLabelEntropy(data, weights):
         entropy = entropy + (y1*math.log(y1))
     return 0-entropy
 
+
 def decisionTree(data, depth, weights, maxdepth, rootVal):
     if depth == maxdepth:
         val = findMajority(data)
@@ -180,8 +227,22 @@ def findAccuracy(testData, trees, alphas):
             if testVal[0] == -1:
                 acc=acc+1
         testTotal = testTotal + 1
-    print("ACC: ", acc, " TOTAL: ", testTotal)
+    #print("ACC: ", acc, " TOTAL: ", testTotal)
     return acc/testTotal
+
+def getNumNodes(root):
+    if root.leaf == True or root == None:
+        return 0
+    else:
+        val = 1
+        if root.left != None:
+            val = val + getNumNodes(root.left)
+
+        if root.right != None:
+            val = val + getNumNodes(root.right)
+
+        return val
+
 
 trainedLabel=[]
 def computeError(root, trainData, weights):
@@ -223,23 +284,99 @@ for i in range(0, dataCount):
 maxdepth = 3
 trainAccList = []
 testAccList = []
+oneTrees = []
+coordinate_alphas = []
+# use d for coordinate descent
+# get 1 rooted trees (22 of them)
+for i in range(1,23):
+    root = decisionTree(d, 1, weights, 2, i)
+    oneTrees.append(root)
+    coordinate_alphas.append(1/5)
+
+twoTrees = []
+for i in range(0,len(oneTrees)):
+    root = copyTree(oneTrees[i])
+    for j in range(0, len(oneTrees)):
+        if i!=j:
+            root.left = copyTree(oneTrees[j])
+            twoTrees.append(root)
+    
+    root = copyTree(oneTrees[i])
+    for j in range(0, len(oneTrees)):
+        if i!=j:
+            root.right = copyTree(oneTrees[j])
+            twoTrees.append(root)
+
+threeTrees = []
+for i in range(0, len(oneTrees)):
+    root = copyTree(oneTrees[i])
+    for j in range(0, len(twoTrees)):
+        if i!=j:
+            root.left = copyTree(twoTrees[j])
+            threeTrees.append(root)
+
+    root = copyTree(oneTrees[i])
+    for j in range(0, len(twoTrees)):
+        if i!=j:
+            root.left = copyTree(twoTrees[j])
+            threeTrees.append(root)
+
+for i in range(0, len(oneTrees)):
+    root = copyTree(oneTrees[i])
+    for j in range(0, len(oneTrees)):
+        if i!=j:
+            root.left = copyTree(oneTrees[j])
+            for k in range(0, len(oneTrees)):
+                if j!=k:
+                    root.right = copyTree(oneTrees[k])
+                    threeTrees.append(root)
+
+    root = copyTree(oneTrees[i])
+    for j in range(0, len(oneTrees)):
+        if i!=j:
+            root.right = copyTree(oneTrees[j])
+            for k in range(0, len(oneTrees)):
+                if j!=k:
+                    root.left = copyTree(oneTrees[k])
+                    threeTrees.append(root)
+
+treei = 0
+print("Populating 3 attribute trees")
+for tree in threeTrees:
+    treei= treei+1
+    populateData(tree, d, 1)
+
+print(len(threeTrees))
 for j in range(0,10):
-    root = decisionTree(d,1,weights, maxdepth, -1)
-    trees.append(root)
+    # use threeTrees list to find the min error
+    error = float("inf")
+    index = 0
+    i = 0
+    for tree in threeTrees:
+        e = computeError(tree, d, weights)
+        if e < error:
+            error = e
+            index = i
+
+        i=i+1
+
+    error = computeError(threeTrees[index], d, weights)
+    trees.append(threeTrees[index])
     #if j == 0:
     #    for i in range(0, dataCount):
     #        weights[i] = 1/dataCount
-    error = computeError(root, d, weights)
-    print("Error: ", error)
+    #print("Error: ", error)
     # calculate alpha
     alpha = 0.5 * (math.log((1-error)/error))
     print("aplha round: ", j, " :",alpha)
-    if j == 3:
-        printTree(root, 1)
+    if j < 3:
+        printTree(threeTrees[index], 1)
+
     alphas.append(alpha)
     # update weights
+    trainedVal = getLabelValues(threeTrees[index], d)
     for i in range(0,dataCount):
-        if trainedLabel[i] != d[i][0]:
+        if trainedVal[i] != d[i][0]:
             trainval = 1
         else:
             trainval = -1
@@ -252,7 +389,7 @@ for j in range(0,10):
     trainAccList.append(trainAcc)
     testAccList.append(testAcc)
 
-j = range(1,11)
+j = range(0,10)
 plt.plot(j, trainAccList, 'r-', j, testAccList, 'bs')
 plt.show()
 
@@ -260,20 +397,6 @@ plt.show()
 # accuracy = findAccuracy(d, alphas, trees)
 # calculate accuracy on test data with boosting
 
-def getVal(root, data):
-    if root.leaf == False and data[root.data] == -1:
-        return getVal(root.left, data)
-    elif root.leaf == False and data[root.data] == 1:
-        return getVal(root.right, data)
-    else:
-        return root.data
-
-def getLabelValues(root, data):
-    curLabel = []
-    for d in data:
-        curLabel.append(getVal(root, d))
-    return curLabel
-    
 def findCoordinateAccuracy(testData, oneTrees, coordinate_alphas):
     testTotal = 0
     acc = 0
@@ -289,7 +412,7 @@ def findCoordinateAccuracy(testData, oneTrees, coordinate_alphas):
             if testVal[0] == -1:
                 acc=acc+1
         testTotal = testTotal + 1
-    print("ACC: ", acc, " TOTAL: ", testTotal)
+    #print("ACC: ", acc, " TOTAL: ", testTotal)
     return acc/testTotal
 
 weights = []
@@ -300,19 +423,38 @@ for i in range(0, dataCount):
     weights.append(1/dataCount)
 
 maxdepth = 2
+oneTrees = []
+coordinate_alphas = []
+for i in range(1,23):
+    root = decisionTree(d, 1, weights, maxdepth, i)
+    oneTrees.append(root)
+    coordinate_alphas.append(1/5)
+
+print("Adaboost on trees with 1 attribute")
 for j in range(0,20):
-    root = decisionTree(d,1,weights, maxdepth, -1)
+    error = float("inf")
+    index = 0
+    i = 0
+    for tree in oneTrees:
+        e = computeError(tree, d, weights)
+        if e < error:
+            error = e
+            index = i
+
+        i=i+1
+
     trees.append(root)
     #if j == 0:
     #    for i in range(0, dataCount):
     #        weights[i] = 1/dataCount
     error = computeError(root, d, weights)
-    print("Error: ", error)
+    #print("Error: ", error)
     # calculate alpha
     alpha = 0.5 * (math.log((1-error)/error))
     print("aplha round: ", j, " :",alpha)
     alphas.append(alpha)
     # update weights
+    trainedVal = getLabelValues(root, d)
     for i in range(0,dataCount):
         if trainedLabel[i] != d[i][0]:
             trainval = 1
@@ -321,18 +463,9 @@ for j in range(0,20):
         weights[i] = (((math.exp(trainval*alpha)))*weights[i])/(2*(math.sqrt(error*(1-error))))
     #print(weights)
 
-oneTrees = []
-coordinate_alphas = []
 # use d for coordinate descent
 # get 1 rooted trees (22 of them)
-for i in range(0, dataCount):
-    weights[i] = 1/dataCount
-for i in range(1,23):
-    root = decisionTree(d, 1, weights, maxdepth, i)
-    #printTree(root,1)
-    oneTrees.append(root)
-    coordinate_alphas.append(1/5)
-print(coordinate_alphas)
+print("initial coordinate alphas: \n",coordinate_alphas)
 expVal = 0
 for values in d:
     total = 0
@@ -387,7 +520,7 @@ testCoordAcc = findCoordinateAccuracy(testData, oneTrees, coordinate_alphas)
 print("Coordinate Descent Accuracy on TestData: ", testCoordAcc)
 testAdaboostAcc = findAccuracy(testData, trees, alphas)
 print("Test Accuracy with Adaboost: ", testAdaboostAcc)
-print("Final set of coordinate alphas:")
+print("Final set of coordinate alphas:\n")
 print(coordinate_alphas)
-print("Final set of adaboost alphas:")
+print("Final set of adaboost alphas:\n")
 print(alphas)
